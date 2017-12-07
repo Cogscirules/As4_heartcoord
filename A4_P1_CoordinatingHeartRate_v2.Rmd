@@ -1,0 +1,974 @@
+---
+title: "Assignment 4 - Coordinating Heart Rate"
+author: "Riccardo Fusaroli"
+date: "November 6, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7")
+
+library(pacman)
+
+
+p_load(dplyr, lmerTest, ggplot2, stringr, plyr, caret, modelr, tidyverse, MASS, simr, MuMIn, cvTools, hydroGOF, lsr, pastecs, crqa, dostats, readr, stats, pROC, groupdata2, knitr, gridExtra)
+
+file1 = read.csv("Study1_G1_T1_Synchronous.csv")
+
+```
+
+## Analysing Heart Rate and Respiration data
+
+The goal of this assignment is to first familiarize you with heart rate, and respiration data and their preprocessing. The second part explores how to analyze interpersonal coordination of these signals.
+
+These are the questions you need to be able to answer at the end of the assignment (aka that you need to submit as part of the portfolio)
+
+1) How do you preprocess heart rate and respiration data? Describe the process. If any data needs to be excluded, list the excluded data and motivate the exclusion.
+
+2) Do you observe interpersonal coordination in heart rate and respiration? Describe your control baseline, the method used to quantify coordination, and the statistical models used to infer whether coordination was higher than in the baseline. Report the results of the models.
+
+3) Do you observe differences in coordination between conditions? Report the models and results.
+
+4) Is respiration coordination a likely driver of heart rate coordination? Describe how you would test for it. Bonus points if you actually run the tests and report methods and results.
+
+N.B. to give you a bit more data I included data from last year (Study1) and from your class (Study2). Note that synchronouns and turn-taking are the same across both studies, but the third condition is different: last year it was self-paced joint reading; this year it was the tv-series conversation. So you might want to exclude the self-paced reading (but, up to you!)
+
+## Step by step suggestions to solve the assignment
+
+
+### Exploring physiological signals
+
+- Choose one pair (one pair, three conditions)
+- Load the logs
+- Produce a plot of the participants' respiration signal and a different one of the participants' HR signal (for inspecting whether the data is usable)
+  N.B: remember the slides: artifacts, downsampling, scaling.
+  N.B. The gridExtra::grid.arrange() function allows you to display the plots side by side. E.g. grid.arrange(plot1, plot2, plot3, ncol=3)
+- Can you eye-ball which condition if any displays more physiological coordination?
+
+- Run crqa on heart rate and respiration data (find parameters, run crqa)
+- Does this tell you more than just eyeballing the plots?
+
+
+```{r setup, include=FALSE}
+
+
+rplot1 = ggplot(file1, aes(time, Resp1)) + geom_line()
+rplot1
+rplot2 = ggplot(file1, aes(time, Resp2)) + geom_line()
+rplot2
+
+resp_plot = grid.arrange(rplot1, rplot2, ncol = 2)
+
+#downsampling
+d1 = file1%>% 
+  group(n= 100, method= 'greedy') %>%       
+  dplyr::summarise(time= mean(time,na.rm=T),HR1 = mean(HR1,na.rm=T),HR2 = mean(HR2,na.rm=T),Resp1 = mean(Resp1,na.rm=T),Resp2 = mean(Resp2,na.rm=T))
+
+
+#outliers removal
+removeOuts = function(ts,threshold){
+  ts[ts> (mean(ts, na.rm=T)+
+      (threshold*sd(ts,na.rm=T))) |
+    ts < (mean(ts,na.rm=T) -
+     (threshold*sd(ts,na.rm=T)))] = 
+mean(ts, na.rm=T)
+return(ts)}
+
+threshold=2.5
+d$HR1 = removeOuts(d$HR1,threshold)
+
+#scaling signals
+d1$Resp1S=scale(d1$Resp1)  
+d1$Resp2S=scale(d1$Resp2)  
+d1$HR1S=scale(d1$HR1) 
+d1$HR2S=scale(d1$HR2)
+
+
+#plotting 
+
+rplot1.1 = ggplot(d1, aes(time, Resp1)) + geom_line()
+rplot1.1
+rplot2.1 = ggplot(d1, aes(time, Resp2)) + geom_line()
+rplot2.1
+
+resp_plot = grid.arrange(rplot1.1, rplot2.1, ncol = 2)
+
+#Plotting respiration
+
+col_resp_plot = ggplot(d1, aes(time, Resp1)) + geom_line ()+ 
+  geom_line(aes(time, Resp2), color = "blue")
+
+col_resp_plot
+
+hplot1.1 = ggplot(d1, aes(time, HR1)) + geom_line()
+hplot1.1
+hplot2.1 = ggplot(d1, aes(time, HR2)) + geom_line()
+hplot2.1
+
+#Plotting heart rate
+
+col_HR_plot = ggplot(d1, aes(time, HR1)) + geom_line ()+ 
+  geom_line(aes(time, HR2), color = "red")
+
+col_HR_plot
+
+
+# - Can you eye-ball which condition if any displays more physiological coordination?
+
+
+
+
+
+#Running CRQA on respiration
+
+#Finding the optimal parameters: run on all pairs:
+
+#list you ned for optimizeparam function
+par = list(lgM =  20, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0,  mindiagline = 2,  minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip")
+
+#get parameters for rqa
+ans = optimizeParam(d1$Resp1, d1$Resp2, par, min.rec = 3.5, max.rec = 4.5)
+ans
+
+#try() --> selvom den ikke får en værdi så looper den videre/crasher ikke
+
+#Choose a common value for delay, emb.dim and radius
+#File has to be imported twise since crqa plot compares two timeseries
+Results=crqa (d1$Resp1, d1$Resp2, delay=26, embed=7, radius=25.47183,normalize=0,rescale=0,mindiagline = 2,minvertline = 2)
+
+#Represent the plot:
+RP=Results$RP
+RP = matrix(as.numeric(RP), nrow = ncol(RP)) 
+cols = c("white","blue4")
+image(RP, xlab = "", ylab = "", col = cols)
+
+#Save variables from results to seperate variables
+
+RR = Results$RR
+DET = Results$DET
+MAXL = Results$maxL #maximal trajectory
+L = Results$L #mean trajectory
+ENTR = Results$ENTR
+LAM = Results$LAM
+TT = Results$TT
+
+
+#bind
+rqa = data.frame(RR, DET, MAXL, L, ENTR, LAM, TT)
+
+
+
+# RUNNING RQA ON HR
+
+#list you ned for optimizeparam function
+par = list(lgM =  20, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0,  mindiagline = 2,  minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip")
+
+#get parameters for rqa
+ans = optimizeParam(d1$HR1, d1$HR2, par, min.rec = 3.5, max.rec = 4.5)
+ans
+
+#try() --> selvom den ikke får en værdi så looper den videre/crasher ikke
+
+#Choose a common value for delay, emb.dim and radius
+#File has to be imported twise since crqa plot compares two timeseries
+Results=crqa (d1$HR1, d1$HR2, delay=26, embed=7, radius=25.47183,normalize=0,rescale=0,mindiagline = 2,minvertline = 2)
+
+#Represent the plot:
+RP=Results$RP
+RP = matrix(as.numeric(RP), nrow = ncol(RP)) 
+cols = c("white","blue4")
+image(RP, xlab = "", ylab = "", col = cols)
+
+#Save variables from results to seperate variables
+
+RR = Results$RR
+DET = Results$DET
+MAXL = Results$maxL #maximal trajectory
+L = Results$L #mean trajectory
+ENTR = Results$ENTR
+LAM = Results$LAM
+TT = Results$TT
+
+#bind
+rqa = data.frame(RR, DET, MAXL, L, ENTR, LAM, TT)
+
+
+
+# - Does this (RQA) tell you more than just eyeballing the plots?
+
+```
+
+
+
+```{r}
+
+#Some functions
+
+
+#downsampling
+downsample = function(x){
+  x%>% 
+  group(n= 100, method= 'greedy') %>%       
+  dplyr::summarise(time= mean(time,na.rm=T),HR1 = mean(HR1,na.rm=T),HR2 = mean(HR2,na.rm=T),Resp1 = mean(Resp1,na.rm=T),Resp2 = mean(Resp2,na.rm=T))
+return(x)}
+
+
+#outliers removal
+removeOuts = function(ts,threshold){
+  ts[ts> (mean(ts, na.rm=T)+
+      (threshold*sd(ts,na.rm=T))) |
+    ts < (mean(ts,na.rm=T) -
+     (threshold*sd(ts,na.rm=T)))] = 
+mean(ts, na.rm=T)
+return(ts)}
+threshold=2.5
+d$HR1 = removeOuts(d$HR1,threshold)
+
+#scaling signals
+scale = function(x){
+x$Resp1S=scale(x$Resp1)  
+x$Resp2S=scale(x$Resp2)  
+x$HR1S=scale(x$HR1) 
+x$HR2S=scale(x$HR2)
+}
+
+
+#rqa function
+rqa_func = function(x, y){
+  
+  par = list(lgM =  20, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0,  mindiagline = 2, minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip")
+  
+  
+  param = try(optimizeParam(x, y, par, min.rec = 3.5, max.rec = 4.5))
+  
+  if (length(param)>1){
+    Results = crqa(x, y, delay = param$delay, embed = param$emddim, radius = param$radius, normalize = 0, rescale = 0, mindiagline = 2, minvertline = 2)
+  }else {
+    Results = NULL
+    param = NULL
+    param$delay = NA
+    param$emddim = NA
+    param$radius = NA
+    Results$RR = NA
+    Results$DET = NA
+    Results$maxL = NA
+    Results$L = NA
+    Results$ENTR = NA
+    Results$LAM = NA
+    Results$TT = NA
+  }
+  
+  
+  df = data.frame(delay = param$delay, embed = param$emddim, radius = param$radius, RR= Results$RR, DET = Results$DET, LMAX = Results$maxL, L = Results$L, ENTR = Results$ENTR, LAM = Results$LAM, TT = Results$TT)
+  
+  return(df)
+  
+}
+
+
+
+
+```
+
+
+
+### Systematically pre-process the data
+- Loop through all the files (either with a loop or with a function), check which files should be excluded, if any, and save the pre-processed time-series. Tip: plot and visually inspect the data to figure out which should be excluded.
+- Run crqa on all the pre-processed time-series and save the output (don't forget to add columns with study, group, condition and trial). Tip: remember to first assess optimal parameters (dimensions, delay, radius) across all timeseries. Tip: it will often fail, just take whatever parameters you get, select optimal across timeseries parameters and run crqa on all timeseries with those. Tip: double check the rr. When I ran the loop, I got very low rr, so I adjusted the radius until the average of rr across all pairs was approx. 4%.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+all_files = list.files(path = "CleanData", full.names = TRUE)
+
+
+n = 1
+
+#l�ser, scale, downsample, removeout, plot over resp og hr for partc 1 og 2
+
+path = ("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/CleanData")
+
+folder = file.path(path)
+
+
+
+#Study1_G1_T1_Synchronous
+
+
+
+setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/CleanData")
+all_list = list.files(pattern= ".csv", recursive = TRUE)
+
+for (i in all_list){
+  
+  
+  x = read.csv(i, header = T)
+  
+  
+  
+  #downsample
+  x1 = x%>% 
+  group(n= 100, method= 'greedy') %>%       
+  dplyr::summarise(
+    time= mean(time,na.rm=T),
+    HR1 = mean(HR1,na.rm=T),
+    HR2 = mean(HR2,na.rm=T),
+    Resp1 = mean(Resp1,na.rm=T),
+    Resp2 = mean(Resp2,na.rm=T)
+  )
+  
+  #remove outliers
+  x1$Resp1 = removeOuts(x1$Resp1, threshold)
+  x1$Resp2 = removeOuts(x1$Resp2, threshold)
+  x1$HR1 = removeOuts(x1$HR1, threshold)
+  x1$HR2 = removeOuts(x1$HR2, threshold)
+  
+  
+  #scaling
+  x1$Resp1S=scale(x1$Resp1)  
+  x1$Resp2S=scale(x1$Resp2)  
+  x1$HR1S=scale(x1$HR1) 
+  x1$HR2S=scale(x1$HR2)
+  
+
+  
+  # write file
+  
+  namefile = paste("Preprocess_", i)
+  
+  write_csv(x1, file.path("Preprocess",namefile))
+  
+  # print(n)
+  # n = n+1
+  
+
+  }
+
+
+setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/CleanData/Preprocess")
+all_list_plot = list.files(pattern= ".csv", recursive = TRUE)
+#n = 1
+
+for (i in all_list_plot){
+  
+  
+  x = read.csv(i, header = T)
+  
+  #plotting
+  
+  HRpS = ggplot(x, aes(time, HR1S)) + geom_line() + geom_line(aes(time, HR2S), color = "red")
+  HRp = ggplot(x, aes(time, HR1)) + geom_line() + geom_line(aes(time, HR2), color = "red")
+  RpS = ggplot(x, aes(time, Resp1S)) + geom_line() + geom_line(aes(time, Resp2S), color = "blue")
+  Rp = ggplot(x, aes(time, Resp1)) + geom_line() + geom_line(aes(time, Resp2), color = "blue")
+
+  
+  #plot them together 
+  plot_all = grid.arrange(HRpS, HRp, RpS, Rp)
+
+  # Save plots so you can see them
+  png(filename=paste0("plot_all", i,".png"))
+  plot(plot_all)
+  dev.off()
+  
+  
+}
+
+#List the ones that should be excluded
+
+
+#Run CRQA
+
+HR_Delay = NULL
+HR_Embed = NULL
+HR_Radius = NULL
+Resp_Delay = NULL
+Resp_Embed = NULL
+Resp_Radius = NULL
+study = NULL
+group = NULL
+trial = NULL
+condition = NULL
+n = n + 1
+df = NULL
+
+setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/CleanData/Preprocess")
+prep_list = list.files(pattern= ".csv", recursive = TRUE)
+
+
+#Define input to parameter optimization
+par = list(lgM =  50, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0,  mindiagline = 2,  minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip")
+
+#Optimize for each file
+for (i in prep_list){
+  
+  x = read.csv(i, header = T)
+  
+  study = str_extract(x, "Study+\\d+") %>%   
+      str_extract("\\d+")
+  group = str_extract(x, "G+\\d+") %>%   
+      str_extract("\\d+")
+  trial = str_extract(x, "T+\\d+") %>%   
+      str_extract("\\d+")
+  condition = gsub(".*[_]([^.]+)[.].*", "\\1", x)
+
+  #Get optimized parameters
+  HR_ans = try(optimizeParam(x$HR1, x$HR2, par, min.rec= 2, max.rec= 8))
+  Resp_ans = try(optimizeParam(x$Resp1, x$Resp2, par, min.rec= 2, max.rec= 8))
+  
+  #Save optimal parameters
+  if (length(HR_ans) < 2){
+    HR_Delay[n] = NA
+    HR_Embed[n] = NA
+    HR_Radius[n] = NA
+  } else {
+    HR_Delay[n] = HR_ans$delay
+    HR_Embed[n] = HR_ans$emddim
+    HR_Radius[n] = HR_ans$radius}
+  
+  #Save optimal parameters
+  if (length(Resp_ans) < 2){
+    Resp_Delay[n] = NA
+    Resp_Embed[n] = NA
+    Resp_Radius[n] = NA
+  } else {
+    Resp_Delay[n] = Resp_ans$delay
+    Resp_Embed[n] = Resp_ans$emddim
+    Resp_Radius[n] = Resp_ans$radius}
+  
+  #loop end
+  print (n)
+  n = n+1 
+  }
+
+HR_Delay = median(HR_Delay, na.rm=T)
+HR_Delay
+
+HR_DELAY = 20
+
+
+
+HR_Embed = median(HR_Embed, na.rm = T)
+HR_Embed
+
+HR_EMBED = 1
+
+#as suggested, add 1.2
+HR_Radius = median(HR_Radius, na.rm = T)+1.2
+HR_Radius
+
+HR_RADIUS = 8.793347
+
+
+Resp_Delay = median(Resp_Delay, na.rm = T)
+Resp_Delay
+
+Resp_DELAY = 26
+
+Resp_Embed = median(Resp_Embed, na.rm = T)
+Resp_Embed
+
+Resp_EMBED = 2
+
+Resp_Radius = median(Resp_Radius, na.rm = T)+1.2
+Resp_Radius
+
+Resp_RADIUS = 2.647569
+
+
+
+
+# Finding the crqa results
+
+# Loop real pairs
+setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/CleanData/Preprocess")
+clean_list_2 = list.files(pattern= ".csv", recursive =TRUE)
+
+
+#Create lists for results
+Study_l = NULL
+Group_l = NULL
+Trial_l = NULL
+Condition_l = NULL
+
+#CQRA
+HR_RR = NULL
+HR_DET = NULL
+HR_NRLINE = NULL
+HR_maxL = NULL
+HR_L = NULL
+HR_ENTR = NULL
+HR_LAM = NULL
+HR_TT = NULL
+Resp_RR = NULL
+Resp_DET = NULL
+Resp_NRLINE = NULL
+Resp_maxL = NULL
+Resp_L = NULL
+Resp_ENTR = NULL
+Resp_LAM = NULL
+Resp_TT = NULL
+#iteration counter
+n = 1
+
+
+for (i in clean_list_2){
+  ###Read file
+  #Put the path together with the filename
+  x = read.csv(i)
+  
+  #Extract demographics from filename
+  Study_l [n] = str_extract(i, "Study+\\d+") %>%   
+        str_extract("\\d+")
+  Group_l [n] = NA
+    #str_extract(i, "G+\\d+") %>%   
+        #str_extract("\\d+")
+  Trial_l [n] = NA
+    #str_extract(i, "T+\\d+") %>%   
+        #str_extract("\\d+")
+  Condition_l [n] = gsub(".*[_]([^.]+)[.].*", "\\1", i)
+  
+
+  #Do CRQA analysis - on HR
+    HR_crqa_t = try(crqa (x$HR1, x$HR2, delay=HR_DELAY, embed=HR_EMBED, radius=HR_RADIUS, normalize=0, rescale=0, mindiagline = 2, minvertline = 2)) 
+  
+  if (length(HR_crqa_t) < 2 ){
+    HR_RR[n] = NA
+    HR_DET[n] = NA
+    HR_NRLINE[n] = NA
+    HR_maxL[n] = NA
+    HR_L[n] = NA
+    HR_ENTR[n] = NA
+    HR_LAM[n] = NA
+    HR_TT[n] = NA
+  } else {
+    HR_RR[n] = HR_crqa_t$RR
+    HR_DET[n] = HR_crqa_t$DET
+    HR_NRLINE[n] = HR_crqa_t$NRLINE
+    HR_maxL[n] = HR_crqa_t$maxL
+    HR_L[n] = HR_crqa_t$L
+    HR_ENTR[n] = HR_crqa_t$ENTR
+    HR_LAM[n] = HR_crqa_t$LAM
+    HR_TT[n] = HR_crqa_t$TT}
+    
+      #Do CRQA analysis - on Respiration
+    Resp_crqa_t = try(crqa (x$Resp1, x$Resp2, delay=Resp_DELAY, embed=Resp_EMBED, radius=Resp_RADIUS, normalize=0, rescale=0, mindiagline = 2, minvertline = 2)) 
+  
+  if (length(Resp_crqa_t) < 2 ){
+    Resp_RR[n] = NA
+    Resp_DET[n] = NA
+    Resp_NRLINE[n] = NA
+    Resp_maxL[n] = NA
+    Resp_L[n] = NA
+    Resp_ENTR[n] = NA
+    Resp_LAM[n] = NA
+    Resp_TT[n] = NA
+  } else {
+    Resp_RR[n] = Resp_crqa_t$RR
+    Resp_DET[n] = Resp_crqa_t$DET
+    Resp_NRLINE[n] = Resp_crqa_t$NRLINE
+    Resp_maxL[n] = Resp_crqa_t$maxL
+    Resp_L[n] = Resp_crqa_t$L
+    Resp_ENTR[n] = Resp_crqa_t$ENTR
+    Resp_LAM[n] = Resp_crqa_t$LAM
+    Resp_TT[n] = Resp_crqa_t$TT}
+  
+  #Loop end
+  print(n)
+  n = n+1
+  
+  }
+
+#Combine the list to create dataset
+d_out_real = data.frame(cbind (Study_l, Group_l, Trial_l, Condition_l, HR_RR, HR_DET, HR_NRLINE, HR_maxL, HR_L, HR_ENTR, HR_LAM, HR_TT, Resp_RR, Resp_DET, Resp_NRLINE, Resp_maxL, Resp_L, Resp_ENTR, Resp_LAM, Resp_TT))
+
+d_out_real$typepairs = "real"
+
+
+write.csv(d_out_real, file="Results_Real.csv")
+
+
+
+
+
+
+
+```
+
+### Creating controls: shuffled controls
+ - loop through all pairs and conditions
+ - shuffle the timeseries (take a timeseries and rearrange its values in a random order). Tip check the sample() function
+ - run crqa and save the output. NB. which delay, embed, radius parameters should you use?
+ - statistically compare the crqa indexes in real and shuffled pairs
+
+```{r setup, include=FALSE}
+
+
+# Creating shuffled pairs
+
+setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/CleanData/Preprocess")
+clean_list = list.files(pattern= ".csv", recursive = FALSE)
+
+#loop
+for (i in clean_list) {
+
+  x = read.csv(i, header = T)
+  
+  #Datapoints order = randomized/shuffled
+  x$HR1r = sample(x$HR1, length(x$HR1))
+  x$HR1 = x$HR1r
+  x$HR2r = sample(x$HR2, length(x$HR2))
+  x$HR2 = x$HR2r
+  x$Resp1r = sample(x$Resp1, length(x$Resp1))
+  x$Resp1 = x$Resp1r
+  x$Resp2r = sample(x$Resp2, length(x$Resp2))
+  x$Resp2 = x$Resp2r
+  
+  #create new files
+  filename = paste("Shuffled/", i, sep="")
+  write.csv(x, file = filename)
+}
+
+setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/CleanData/Preprocess/Shuffled")
+clean_list_3 = list.files(pattern= ".csv", recursive = FALSE)
+
+
+for (i in clean_list_3){
+  ###Read file
+  #Put the path together with the filename
+  x = read.csv(i)
+  
+  #Extract demographics from filename
+  Study_l [n] = str_extract(i, "Study+\\d+") %>%   
+        str_extract("\\d+")
+  Group_l [n] = NA
+    #str_extract(i, "G+\\d+") %>%   
+        #str_extract("\\d+")
+  Trial_l [n] = NA
+    #str_extract(i, "T+\\d+") %>%   
+        #str_extract("\\d+")
+  Condition_l [n] = gsub(".*[_]([^.]+)[.].*", "\\1", i)
+  
+
+  #Do CRQA analysis - on HR
+    HR_crqa_t = try(crqa (x$HR1, x$HR2, delay=HR_DELAY, embed=HR_EMBED, radius=HR_RADIUS, normalize=0, rescale=0, mindiagline = 2, minvertline = 2)) 
+  
+  if (length(HR_crqa_t) < 2 ){
+    HR_RR[n] = NA
+    HR_DET[n] = NA
+    HR_NRLINE[n] = NA
+    HR_maxL[n] = NA
+    HR_L[n] = NA
+    HR_ENTR[n] = NA
+    HR_LAM[n] = NA
+    HR_TT[n] = NA
+  } else {
+    HR_RR[n] = HR_crqa_t$RR
+    HR_DET[n] = HR_crqa_t$DET
+    HR_NRLINE[n] = HR_crqa_t$NRLINE
+    HR_maxL[n] = HR_crqa_t$maxL
+    HR_L[n] = HR_crqa_t$L
+    HR_ENTR[n] = HR_crqa_t$ENTR
+    HR_LAM[n] = HR_crqa_t$LAM
+    HR_TT[n] = HR_crqa_t$TT}
+    
+      #Do CRQA analysis - on Respiration
+    Resp_crqa_t = try(crqa (x$Resp1, x$Resp2, delay=Resp_DELAY, embed=Resp_EMBED, radius=Resp_RADIUS, normalize=0, rescale=0, mindiagline = 2, minvertline = 2)) 
+  
+  if (length(Resp_crqa_t) < 2 ){
+    Resp_RR[n] = NA
+    Resp_DET[n] = NA
+    Resp_NRLINE[n] = NA
+    Resp_maxL[n] = NA
+    Resp_L[n] = NA
+    Resp_ENTR[n] = NA
+    Resp_LAM[n] = NA
+    Resp_TT[n] = NA
+  } else {
+    Resp_RR[n] = Resp_crqa_t$RR
+    Resp_DET[n] = Resp_crqa_t$DET
+    Resp_NRLINE[n] = Resp_crqa_t$NRLINE
+    Resp_maxL[n] = Resp_crqa_t$maxL
+    Resp_L[n] = Resp_crqa_t$L
+    Resp_ENTR[n] = Resp_crqa_t$ENTR
+    Resp_LAM[n] = Resp_crqa_t$LAM
+    Resp_TT[n] = Resp_crqa_t$TT}
+  
+  #Loop end
+  print(n)
+  n = n+1
+  
+  }
+
+#Combine the list to create dataset
+d_out_shuffled = data.frame(cbind (Study_l, Group_l, Trial_l, Condition_l, HR_RR, HR_DET, HR_NRLINE, HR_maxL, HR_L, HR_ENTR, HR_LAM, HR_TT, Resp_RR, Resp_DET, Resp_NRLINE, Resp_maxL, Resp_L, Resp_ENTR, Resp_LAM, Resp_TT))
+
+d_out_shuffled$typepairs = "shuffled"
+
+
+write.csv(d_out_shuffled, file="Results_Shuffled.csv")
+
+
+
+
+
+
+```
+
+ 
+### TRICKY! Creating controls: surrogate pair controls
+ - Per each real pair, identify at least one surrogate pair (matching one of the participants, with somebody doing the same task, but in a different pair). Tip: Celine will share a commented script
+ - Run crqa on all the surrogate pairs and save the output. NB. which delay, embed, radius parameters should you use?
+ - Test whether crqa shows a difference between real and surrogate pairs
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+#Making surrogate pairs --> first looped through study 1, then 2
+
+setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/adm_7")
+
+prepro_filelist = list.files(pattern = "Study2") # load the preprocessed files
+
+num=str_extract_all(prepro_filelist, "\\d+") #extract all numbers in the file name (i.e Study?_G?_T?)
+
+df_surro= as.data.frame(t(as.data.frame(num))) #create a transposed (i.e. "tipped") dataframe of these number
+rownames(df_surro)=NULL #Remove rownames.
+
+pairs=as.numeric(unique(as.numeric(as.character(df_surro$V2)))) #create pairs, i.e. unique group numbers
+
+SurrogateList = expand.grid(a = pairs, b = pairs) # expand.grid combines all possible combinations of a given vector
+SurrogateList = subset(SurrogateList, a != b) # Ensure that pair 1 (i.e group1) doesn't get paired with it self.
+
+
+
+# Per each condition
+for (co in c("Synchronous","TurnTaking")){ #loop through a list of condintions 
+  for (i in 1:nrow(SurrogateList)){ #and loop through all the pairings of the surrogate list
+    
+  #start recreate filenames from the working directory based on the matching from the surrogatelist
+  f1=paste0('Study2_G',SurrogateList$a[i]) #Insert group numeber from Surrogatelist 
+  f2=paste0('Study2_G',SurrogateList$b[i])
+  
+  file1=prepro_filelist[grepl(f1,prepro_filelist) & grepl(co,prepro_filelist)] #insert conditions as well.
+  file2=prepro_filelist[grepl(f2,prepro_filelist) & grepl(co,prepro_filelist)]
+  
+  d1=read.csv(file1) #Load the recreated filenames
+  
+  d2=read.csv(file2) 
+  
+  #Ensure both dataframes have the same length
+  if (nrow(d1)>nrow(d2)){
+    d1=d1[1:nrow(d2),]
+  } else {
+    d2=d2[1:nrow(d1),]
+  }
+  
+  #creation of surrogate files. (Riccardo's idea of having fun and completely overdoing it ;-) ) 
+  #per each 2 pairs there are 4 possible surrogate pairs: 
+  #pair1person1 w pair2person2; 
+  d3=data.frame(Resp1=d1$Resp1,Resp2=d2$Resp2,HR1=d1$HR1,HR2=d2$HR2,Resp1S=d1$Resp1S,Resp2S=d2$Resp2S,HR1S=d1$HR1S,HR2S=d2$HR2S)
+  #pair1person2 w pair2person2;
+  d4=data.frame(Resp1=d2$Resp1,Resp2=d1$Resp2,HR1=d2$HR1,HR2=d1$HR2,Resp1S=d2$Resp1S,Resp2S=d1$Resp2S,HR1S=d2$HR1S,HR2S=d1$HR2S)
+  
+  #pair1person1 w pair2person1;
+  d5=data.frame(Resp1=d1$Resp1,Resp2=d2$Resp1,HR1=d1$HR1,HR2=d2$HR1,Resp1S=d1$Resp1S,Resp2S=d2$Resp1S,HR1S=d1$HR1S,HR2S=d2$HR1S)
+  #pair1person2 w pair2person2
+  d6=data.frame(Resp1=d2$Resp2,Resp2=d1$Resp2,HR1=d2$HR2,HR2=d1$HR2,Resp1S=d2$Resp2S,Resp2S=d1$Resp2S,HR1S=d2$HR2S,HR2S=d1$HR2S)
+  
+  #Make filenames that tells which pairs have been mixed
+  file3=paste0("Study2_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"a_",co,".csv")
+  file4=paste0("Study2_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"b_",co,".csv")
+  file5=paste0("Study2_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"c_",co,".csv")
+  file6=paste0("Study2_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"d_",co,".csv")
+  
+  #write csv files
+  write_csv(d3,file.path("surrogate",file3))
+  write_csv(d4,file.path("surrogate",file4))
+  write_csv(d5,file.path("surrogate",file5))
+  write_csv(d6,file.path("surrogate",file6))
+  }
+}
+
+#It only worked with the bad data --> so I deleted manually the surrogate pairs created by the bad data
+
+n = 1
+
+HR_Delay_surro = NULL
+HR_Embed_surro = NULL
+HR_Radius_surro = NULL
+Resp_Delay_surro = NULL
+Resp_Embed_surro = NULL
+Resp_Radius_surro = NULL
+study_surro = NULL
+group_surro = NULL
+trial_surro = NULL
+condition_surro = NULL
+n = n + 1
+df = NULL
+
+setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/adm_7/surrogate")
+surro_list = list.files(pattern= ".csv", recursive = TRUE)
+
+
+#Define input to parameter optimization
+par = list(lgM =  50, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0,  mindiagline = 2,  minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip")
+
+#Optimize for each file
+for (i in surro_list){
+  
+  x = read.csv(i, header = T)
+  
+  study_surro = str_extract(x, "Study+\\d+") %>%   
+      str_extract("\\d+")
+  group_surro = str_extract(x, "G+\\d+") %>%   
+      str_extract("\\d+")
+  trial_surro = str_extract(x, "T+\\d+") %>%   
+      str_extract("\\d+")
+  condition_surro = gsub(".*[_]([^.]+)[.].*", "\\1", x)
+
+  #Get optimized parameters
+  HR_ans = try(optimizeParam(x$HR1, x$HR2, par, min.rec= 2, max.rec= 8))
+  Resp_ans = try(optimizeParam(x$Resp1, x$Resp2, par, min.rec= 2, max.rec= 8))
+  
+  #Save optimal parameters
+  if (length(HR_ans) < 2){
+    HR_Delay_surro[n] = NA
+    HR_Embed_surro[n] = NA
+    HR_Radius_surro[n] = NA
+  } else {
+    HR_Delay_surro[n] = HR_ans$delay
+    HR_Embed_surro[n] = HR_ans$emddim
+    HR_Radius_surro[n] = HR_ans$radius}
+  
+  #Save optimal parameters
+  if (length(Resp_ans) < 2){
+    Resp_Delay_surro[n] = NA
+    Resp_Embed_surro[n] = NA
+    Resp_Radius_surro[n] = NA
+  } else {
+    Resp_Delay_surro[n] = Resp_ans$delay
+    Resp_Embed_surro[n] = Resp_ans$emddim
+    Resp_Radius_surro[n] = Resp_ans$radius}
+  
+  #loop end
+  print (n)
+  n = n+1 
+  }
+
+
+setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/adm_7/surrogate")
+clean_list_3 = list.files(pattern= ".csv", recursive = FALSE)
+
+
+for (i in clean_list_3){
+  ###Read file
+  #Put the path together with the filename
+  x = read.csv(i)
+  
+  #Extract demographics from filename
+  Study_l [n] = str_extract(i, "Study+\\d+") %>%   
+        str_extract("\\d+")
+  Group_l [n] = NA
+    #str_extract(i, "G+\\d+") %>%   
+        #str_extract("\\d+")
+  Trial_l [n] = NA
+    #str_extract(i, "T+\\d+") %>%   
+        #str_extract("\\d+")
+  Condition_l [n] = gsub(".*[_]([^.]+)[.].*", "\\1", i)
+  
+
+  #Do CRQA analysis - on HR
+    HR_crqa_t = try(crqa (x$HR1, x$HR2, delay=HR_DELAY, embed=HR_EMBED, radius=HR_RADIUS, normalize=0, rescale=0, mindiagline = 2, minvertline = 2)) 
+  
+  if (length(HR_crqa_t) < 2 ){
+    HR_RR[n] = NA
+    HR_DET[n] = NA
+    HR_NRLINE[n] = NA
+    HR_maxL[n] = NA
+    HR_L[n] = NA
+    HR_ENTR[n] = NA
+    HR_LAM[n] = NA
+    HR_TT[n] = NA
+  } else {
+    HR_RR[n] = HR_crqa_t$RR
+    HR_DET[n] = HR_crqa_t$DET
+    HR_NRLINE[n] = HR_crqa_t$NRLINE
+    HR_maxL[n] = HR_crqa_t$maxL
+    HR_L[n] = HR_crqa_t$L
+    HR_ENTR[n] = HR_crqa_t$ENTR
+    HR_LAM[n] = HR_crqa_t$LAM
+    HR_TT[n] = HR_crqa_t$TT}
+    
+      #Do CRQA analysis - on Respiration
+    Resp_crqa_t = try(crqa (x$Resp1, x$Resp2, delay=Resp_DELAY, embed=Resp_EMBED, radius=Resp_RADIUS, normalize=0, rescale=0, mindiagline = 2, minvertline = 2)) 
+  
+  if (length(Resp_crqa_t) < 2 ){
+    Resp_RR[n] = NA
+    Resp_DET[n] = NA
+    Resp_NRLINE[n] = NA
+    Resp_maxL[n] = NA
+    Resp_L[n] = NA
+    Resp_ENTR[n] = NA
+    Resp_LAM[n] = NA
+    Resp_TT[n] = NA
+  } else {
+    Resp_RR[n] = Resp_crqa_t$RR
+    Resp_DET[n] = Resp_crqa_t$DET
+    Resp_NRLINE[n] = Resp_crqa_t$NRLINE
+    Resp_maxL[n] = Resp_crqa_t$maxL
+    Resp_L[n] = Resp_crqa_t$L
+    Resp_ENTR[n] = Resp_crqa_t$ENTR
+    Resp_LAM[n] = Resp_crqa_t$LAM
+    Resp_TT[n] = Resp_crqa_t$TT}
+  
+  #Loop end
+  print(n)
+  n = n+1
+  
+  }
+
+#Combine the list to create dataset
+d_out_surrogate = data.frame(cbind (Study_l, Group_l, Trial_l, Condition_l, HR_RR, HR_DET, HR_NRLINE, HR_maxL, HR_L, HR_ENTR, HR_LAM, HR_TT, Resp_RR, Resp_DET, Resp_NRLINE, Resp_maxL, Resp_L, Resp_ENTR, Resp_LAM, Resp_TT))
+
+d_out_surrogate$typepairs = "surrogate"
+
+
+write.csv(d_out_shuffled, file="Results_Surrogate.csv")
+
+setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/adm_7/results")
+
+Real = read.csv("Results_Real.csv", header = T)
+Shuffled = read.csv("Results_Shuffled.csv", header = T)
+Surrogate = read.csv("Results_Surrogate.csv", header = T)
+
+
+
+```
+
+
+### Testing effects of conditions
+ - make a (probably underpowered) mixed model testing effects of the different conditions on heart rate and respiration coordination
+ - N.B: would it make sense to include surrogate pairs? and if so how? what would that tell you?
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+model_sync = glmer(Condition_l$Synchronous ~ )
+
+
+```
+
+
+### Effects of respiration coordination on heart rate coordination
+ - describe how you would test those.
+ - Optional: run the models and report them
+ 
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
