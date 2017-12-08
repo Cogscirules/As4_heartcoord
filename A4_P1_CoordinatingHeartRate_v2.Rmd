@@ -937,7 +937,7 @@ d_out_surrogate = data.frame(cbind (Study_l, Group_l, Trial_l, Condition_l, HR_R
 d_out_surrogate$typepairs = "surrogate"
 
 
-write.csv(d_out_shuffled, file="Results_Surrogate.csv")
+write.csv(d_out_surrogate, file="Results_Surrogate.csv")
 
 setwd("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/adm_7/results")
 
