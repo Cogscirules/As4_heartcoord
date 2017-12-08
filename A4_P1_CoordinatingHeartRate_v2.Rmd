@@ -945,6 +945,8 @@ Real = read.csv("Results_Real.csv", header = T)
 Shuffled = read.csv("Results_Shuffled.csv", header = T)
 Surrogate = read.csv("Results_Surrogate.csv", header = T)
 
+sub1 = rbind(Real, Shuffled)
+sub2 = rbind(sub1, Surrogate)
 
 
 ```
@@ -957,11 +959,19 @@ Surrogate = read.csv("Results_Surrogate.csv", header = T)
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-View(Real)
-
-model_sync = lmer(HR_RR ~ typepairs + (1+Study_l|Condition_l), data = Real, REML = F)
-
 #kan pairs predicte RR for HR og Resp, random effect group
+
+model_1 = lmer(HR_RR ~ typepairs + (1+Study_l|Condition_l), data = sub2, REML = F)
+summary(model_1)
+
+model_2 = lmer(Resp_RR ~ typepairs + (1+Study_l|Condition_l), data = sub2, REML = F)
+summary(model_2)
+
+model_3= lmer(HR_RR ~ Condition_l + (1+Study_l|typepairs), data = sub2, REML = F)
+summary(model_3)
+
+model_4= lmer(Resp_RR ~ Condition_l + (1+Study_l|typepairs), data = sub2, REML = F)
+summary(model_4)
 
 
 ```
@@ -974,7 +984,5 @@ model_sync = lmer(HR_RR ~ typepairs + (1+Study_l|Condition_l), data = Real, REML
  
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
-#kan pairs predicte RR for HR og Resp, random effect group
 
 ```
