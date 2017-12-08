@@ -287,7 +287,7 @@ all_files = list.files(path = "CleanData", full.names = TRUE)
 
 n = 1
 
-#læser, scale, downsample, removeout, plot over resp og hr for partc 1 og 2
+#l?ser, scale, downsample, removeout, plot over resp og hr for partc 1 og 2
 
 path = ("C:/Users/Bruger/Desktop/Programming/Semester 3/asm_7/CleanData")
 
@@ -957,8 +957,11 @@ Surrogate = read.csv("Results_Surrogate.csv", header = T)
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
+View(Real)
 
-model_sync = glmer(Condition_l$Synchronous ~ )
+model_sync = lmer(HR_RR ~ typepairs + (1+Study_l|Condition_l), data = Real, REML = F)
+
+#kan pairs predicte RR for HR og Resp, random effect group
 
 
 ```
@@ -971,4 +974,7 @@ model_sync = glmer(Condition_l$Synchronous ~ )
  
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+#kan pairs predicte RR for HR og Resp, random effect group
+
 ```
